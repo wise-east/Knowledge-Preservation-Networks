@@ -6,6 +6,8 @@ from utils.basic_func import read_json
 import random
 from tqdm import tqdm
 import torch
+from transformers import AutoTokenizer
+from typing import List, Dict, Tuple
 
 DOMAINS = ['restaurant', 'restaurant-train', 'train', 'hotel-restaurant', 'hotel-train', 'hotel', 'attraction-restaurant',
            'attraction-train', 'attraction-hotel', 'attraction']
@@ -61,7 +63,23 @@ def prepare_dataset(par, data, domain, schema, tokenizer):
 
     return data_process
 
-def label_num(belief_state, last_belief_state, schema, tokenizer):
+def label_num(belief_state: List[List[str]], last_belief_state:List[List[str]], schema:List[str], tokenizer: AutoTokenizer)->Tuple[List[str], List[str]]:
+    """_summary_
+
+    Args:
+        belief_state (List[List[str]]): current turn's belief state
+            e.g. [['restaurant-name', 'pizza hut city centre']]
+        last_belief_state (List[List[str]]): previous turn's belief state 
+            e.g. [] 
+        schema (List[str]): slots of current domain 
+            e.g. ['restaurant-area', 'restaurant-book day', 'restaurant-book people', 'restaurant-book time', 'restaurant-food', 'restaurant-name', 'restaurant-price range']
+        tokenizer (AutoTokenizer): a tokenizer instance from the transformers library
+
+    Returns:
+        Tuple[List[str], List[str]]: (operations for each slot in schema, target outputs to generate for any slots in schema with update operations)
+            e.g. ['carryover', 'carryover', 'carryover', 'carryover', 'carryover', 'update', 'carryover'], [['pizza', 'hut', 'city', 'centre', '[unused2]']]
+            
+    """
 
     y_operation = ['carryover'] * len(schema)
     y_generate = []
