@@ -1,5 +1,6 @@
 import argparse
 from utils.basic_func import read_json, write_json
+import os 
 EXPERIMENT_DOMAINS = ["hotel", "train", "restaurant", "attraction", "taxi"]
 slot_convert = {'pricerange':'price range', 'leaveat':'leave at', 'arriveby':'arrive by'}
 def formalize_schema():
@@ -35,6 +36,8 @@ def main():
                 temp_data[domains] = [per_dialog_normal]
 
     train_data = dict(sorted(list(train_data.items()), key=lambda x:len(x[1]), reverse=True))
+
+    os.makedirs(args.output_dir+'/', exist_ok=True)
 
     for lifelong_domain in [ 'restaurant', 'hotel', 'hotel-restaurant', 'train', 'restaurant-train', 'hotel-train',
                              'attraction-restaurant', 'attraction', 'attraction-hotel', 'attraction-train' ]:

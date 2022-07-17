@@ -1,3 +1,5 @@
+# contains the code for the dataloader 
+
 import os
 from utils.basic_model import utt2tensor, get_mask_metric
 from utils.basic_func import read_json
@@ -23,6 +25,18 @@ def get_schema(par, domains):
     return sorted(slot_all)
 
 def prepare_dataset(par, data, domain, schema, tokenizer):
+    """_summary_
+
+    Args:
+        par (_type_): _description_
+        data (_type_): _description_
+        domain (_type_): _description_
+        schema (_type_): _description_
+        tokenizer (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
     data_process = []
     for per_dialog in data:
 
@@ -77,6 +91,19 @@ def label_num(belief_state, last_belief_state, schema, tokenizer):
     return y_operation, y_generate
 
 def data_tokenizer_loader(par, data, tokenizer, schema, shuffle, is_train):
+    """_summary_
+
+    Args:
+        par (_type_): _description_
+        data (_type_): _description_
+        tokenizer (_type_): _description_
+        schema (_type_): _description_
+        shuffle (_type_): _description_
+        is_train (bool): _description_
+
+    Returns:
+        _type_: _description_
+    """
     for per_dialog in data:
         for per_turn in per_dialog:
 

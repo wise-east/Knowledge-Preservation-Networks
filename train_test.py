@@ -1,16 +1,13 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 import argparse
 from parameters import global_parm as par
 from utils.basic_model import masked_cross_entropy_for_value, MultinomialKLDivergenceLoss
-from transformers import BertTokenizer
+from transformers import BertTokenizer, BertConfig, AdamW
 from read_MultiWOZ21 import increment_dataset, get_schema, DOMAINS, prepare_dataset, data_tokenizer_loader, \
     decode_belief_state, predicts_to_list
 from utils.basic_func import read_json
 from bert_model import Bert_DST
-from transformers import BertConfig
 import torch
-from transformers import AdamW
 from evaluator import evaluate
 import torch.nn as nn
 import torch.nn.functional as F
@@ -18,11 +15,13 @@ import random
 import numpy as np
 from copy import deepcopy
 import time
+from loguru import logger 
 
 class DST_model(object):
     def __init__(self, n_gpu, pad_idx):
         super().__init__()
-        self.model_config = BertConfig.from_json_file(par.bert_config_path)
+        # self.model_config = BertConfig.from_json_file(par.bert_config_path)
+        self.model_config = BertConfig.from_pretrained(par.bert_config_path)
         self.model_config.dropout = par.dropout
         self.model_config.attention_probs_dropout_prob = par.attention_probs_dropout_prob
         self.model_config.hidden_dropout_prob = par.hidden_dropout_prob
@@ -124,14 +123,14 @@ class DST_model(object):
                     self.bert_dst_model.zero_grad()
 
                 if dialog_batch_num % 40 == 0:
-                    print('current batch number ', dialog_batch_num, ' train loss ', train_loss, train_loss_all)
+                    logger.info(f'current batch number: {dialog_batch_num}\t train loss: {train_loss:.4f} {[round(tl, 4) for tl in train_loss_all]}')
                     train_loss, train_loss_all = 0, [0, 0]
 
             if per_epoch % 1 == 0:
                 scores = self.validate(dev_dataloader, schema, tokenizer)
                 joint_goal_accuracy = self.get_print_score(scores, per_epoch)
                 if joint_goal_accuracy > best_joint_goal_accuracy:
-                    print('saved models')
+                    logger.info('saved models')
                     best_joint_goal_accuracy = joint_goal_accuracy
                     self.save_model(per_epoch, par.model_save+current_domain)
 
@@ -255,19 +254,20 @@ class DST_model(object):
         all_state = {'us': self.bert_dst_model.state_dict(),
                      'config': par.__dict__,
                      'epoch': epoch}
+        
         with open(path+par.thread_num+'.pkl', 'wb') as f:
             torch.save(all_state, f)
 
     def load_model(self, path=None):
         all_state = torch.load(path, map_location=self.device)
-        print('loaded from epoch ', all_state['epoch'])
+        logger.info(f"loaded from epoch {all_state['epoch']}")
         self.bert_dst_model.load_state_dict(all_state['us'], strict=False)
 
     @staticmethod
     def get_print_score(scores, epoch):
         joint_goal_accuracy = scores[ 0 ] / scores[ 1 ]
 
-        print(' epoch ', epoch, ' joint goal accuracy ', joint_goal_accuracy)
+        logger.info(f' epoch: {epoch} joint goal accuracy: {joint_goal_accuracy:.4f}')
         return joint_goal_accuracy
 
 def main():
@@ -283,6 +283,8 @@ def main():
         for samples in data_memory.items():
             data_memory_samples += samples[1]
 
+
+        # load data for new domain 
         train_data_raw = prepare_dataset(par= par,
                                          data=read_json(os.path.join(par.data_path, per_domain+'[train.json')) +
                                               data_memory_samples,
@@ -291,6 +293,7 @@ def main():
                                          tokenizer=tokenizer)
         train_data_loader = data_tokenizer_loader(par, train_data_raw, tokenizer, current_schema, par.shuffle, True)
 
+        # expand dev set to include new domain  
         dev_data_list = increment_dataset(par= par, domains=DOMAINS[:per_domain_idx+1], data_type='dev')
         dev_data_raw = prepare_dataset(par= par,
                                        data=dev_data_list,
@@ -299,6 +302,7 @@ def main():
                                        tokenizer=tokenizer)
         dev_data_loader = data_tokenizer_loader(par, dev_data_raw, tokenizer, current_schema, False, False)
 
+        # expand test set to include new domain 
         test_data_list = increment_dataset(par= par, domains=DOMAINS[:per_domain_idx+1], data_type='test')
         test_data_raw = prepare_dataset(par= par,
                                         data=test_data_list,
@@ -308,10 +312,10 @@ def main():
         test_data_loader = data_tokenizer_loader(par, test_data_raw, tokenizer, current_schema, False, False)
 
         if par.mode == 'train':
-            print('Train ', per_domain)
+            logger.info(f'Train: {per_domain}')
             current_DST_model.train(train_data_loader, current_schema, tokenizer, dev_data_loader, per_domain, per_domain_idx, last_model, data_memory)
 
-        print('Test ', per_domain)
+        logger.info(f'Test: {per_domain}')
         current_DST_model.load_model(par.model_save+per_domain+par.thread_num+'.pkl')
         scores = current_DST_model.validate(test_data_loader, current_schema, tokenizer)
         _ = current_DST_model.get_print_score(scores, 'test '+per_domain)
@@ -321,7 +325,9 @@ def main():
         else:
             last_model = None
 
-        print('Updata Memory ', per_domain)
+
+        # update memory with prototypical samples 
+        logger.info(f'Updata Memory: {per_domain}')
         update_data_raw = read_json(os.path.join(par.data_path, per_domain + '[train.json'))
         update_data_prepare = prepare_dataset(par=par,
                                           data=update_data_raw,
@@ -334,7 +340,11 @@ def main():
     return 0
 
 if __name__ == '__main__':
-    print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
+    # os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+
+    start_local = time.localtime()
+    start_time = time.time() 
+    logger.info(f"Start time: {time.strftime('%Y-%m-%d %H:%M:%S', start_local)}")
     random_seed = 40
     np.random.seed(random_seed)
     random.seed(random_seed)
@@ -345,16 +355,22 @@ if __name__ == '__main__':
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
     n_gpu = torch.cuda.device_count()
+    logger.info(f"num gpus: {n_gpu}")
+    logger.info(f"torch.cuda.is_available(): {torch.cuda.is_available()}")
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-mode', default='train') # train test
-    parser.add_argument('-thread_num', default='2') # 0
+    parser.add_argument('-thread_num', default='0') # 0
     parser.add_argument('-dataset', default='MultiWOZ21') # MultiWOZ21
     args = parser.parse_args()
     par.init_handler(args.dataset)
     par.thread_num = args.thread_num
     par.mode = args.mode
-    print('this is the thread number ', par.thread_num)
-
+    logger.info(f'this is the thread number {par.thread_num}')
+    
+    os.makedirs(par.model_save, exist_ok=True)
     main()
-    print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
+    end_time = time.time() 
+    end_local = time.localtime()
+    logger.info(f"End time: {time.strftime('%Y-%m-%d %H:%M:%S', end_local)}")
+    logger.info(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(end_time - start_time))}")

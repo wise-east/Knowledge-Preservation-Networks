@@ -14,8 +14,8 @@ class _Config:
         self.data_path = 'data/MultiWOZ_2.1/lifelong'
         self.model_save = 'save/MultiWOZ_2.1/'
 
-        self.bert_base_uncased_path = '/data/liuqbdata/transformers/bert/bert-base-uncased/'
-        self.bert_config_path = '/data/liuqbdata/transformers/bert/bert-base-uncased/config.json'
+        self.bert_base_uncased_path = 'bert-base-uncased'
+        self.bert_config_path = 'bert-base-uncased'
 
         self.dialog_turn_num = 1
         self.per_epoch_all = 30
