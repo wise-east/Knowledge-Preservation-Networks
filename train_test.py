@@ -17,6 +17,7 @@ from copy import deepcopy
 import time
 from loguru import logger 
 
+
 class DST_model(object):
     def __init__(self, n_gpu, pad_idx):
         super().__init__()
@@ -64,6 +65,9 @@ class DST_model(object):
             for batch_dialog in data_iterator:
                 predict_belief_state = None
                 dialog_batch_num += 1
+                # does this mean that batch size = 1? No
+                # each batch_turn is a batch of turns from different conversations that share the same turn_idx
+                # so the batch_size should most of the time = 4 unless dataset is very small or for conversations with very many turns 
                 for batch_turn in batch_dialog:
                     batch_turn_data, max_update, max_value = dataloader.fill_belief_state(
                         batch_turn, predict_belief_state, self.device, self.bert_dst_model.training)
@@ -130,9 +134,12 @@ class DST_model(object):
                 scores = self.validate(dev_dataloader, schema, tokenizer)
                 joint_goal_accuracy = self.get_print_score(scores, per_epoch)
                 if joint_goal_accuracy > best_joint_goal_accuracy:
+                    logger.info(f"New best validation set joint goal accuracy: {joint_goal_accuracy} >> {best_joint_goal_accuracy}")
                     logger.info('saved models')
                     best_joint_goal_accuracy = joint_goal_accuracy
                     self.save_model(per_epoch, par.model_save+current_domain)
+                else: 
+                    logger.info(f"Didn't beat best validation set joint goal accuracy: {joint_goal_accuracy} << {best_joint_goal_accuracy}")
 
     def validate(self, dataloader, schema, tokenizer):
         self.bert_dst_model.eval()
@@ -283,18 +290,23 @@ def main():
         for samples in data_memory.items():
             data_memory_samples += samples[1]
 
-
         # load data for new domain 
+        if par.multitask: 
+            train_data_list = increment_dataset(par= par, domains=DOMAINS[:per_domain_idx+1], data_type='train')
+        else: 
+            train_data_list = read_json(os.path.join(par.data_path, per_domain+'[train.json')) + data_memory_samples
         train_data_raw = prepare_dataset(par= par,
-                                         data=read_json(os.path.join(par.data_path, per_domain+'[train.json')) +
-                                              data_memory_samples,
+                                        data=train_data_list,
                                          domain=per_domain,
                                          schema=current_schema,
                                          tokenizer=tokenizer)
         train_data_loader = data_tokenizer_loader(par, train_data_raw, tokenizer, current_schema, par.shuffle, True)
 
-        # expand dev set to include new domain  
-        dev_data_list = increment_dataset(par= par, domains=DOMAINS[:per_domain_idx+1], data_type='dev')
+        # expand dev set to include new domain
+        if par.increment_dev_set or par.multitask: 
+            dev_data_list = increment_dataset(par= par, domains=DOMAINS[:per_domain_idx+1], data_type='dev')
+        else: 
+            dev_data_list = increment_dataset(par= par, domains=[per_domain], data_type='dev')
         dev_data_raw = prepare_dataset(par= par,
                                        data=dev_data_list,
                                        domain=per_domain,
@@ -327,7 +339,7 @@ def main():
 
 
         # update memory with prototypical samples 
-        logger.info(f'Updata Memory: {per_domain}')
+        logger.info(f'Update Memory: {per_domain}')
         update_data_raw = read_json(os.path.join(par.data_path, per_domain + '[train.json'))
         update_data_prepare = prepare_dataset(par=par,
                                           data=update_data_raw,

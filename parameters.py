@@ -12,7 +12,7 @@ class _Config:
     def _MultiWOZ21_init(self):
         self.raw_data_path = 'data/MultiWOZ_2.1'
         self.data_path = 'data/MultiWOZ_2.1/lifelong'
-        self.model_save = 'save/MultiWOZ_2.1/'
+        
 
         self.bert_base_uncased_path = 'bert-base-uncased'
         self.bert_config_path = 'bert-base-uncased'
@@ -33,12 +33,16 @@ class _Config:
         self.decoder_type = 'gru'
         self.max_r_len = 12
         self.max_seq_length = 256
-        self.memory_num = 50
+        self.memory_num = 0  # 0 50 
         self.alpha_0 = 0.1
         self.alpha_1 = 0.2
         self.temperature = 2
-        self.reverse_type = 'KPN'  # 'none'  'full'  'KPN'
-        self.knowledge_type = 'KPN'  # 'none'  'KPN'
+        self.reverse_type = 'none'  # 'none'  'full'  'KPN'
+        self.knowledge_type = 'none'  # 'none'  'KPN'
+        self.increment_dev_set = False # False True 
+        self.multitask = True # False True 
+
+        self.model_save = f'save/MultiWOZ_2.1/ep{self.per_epoch_all}_increment_dev:{self.increment_dev_set}_kt:{self.knowledge_type}_mem:{self.memory_num}_multitask:{self.multitask}/'
 
         self.rkd_filter_none = False  # True [False is better]
 

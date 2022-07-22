@@ -186,13 +186,6 @@ class Dataset_class(object):
         else:
             self.batch_size = par.test_batch_size
 
-    def _transpose_batch(self, batch):
-        batch_turn = []
-        for turn_idx in range(len(self.data_in[batch[0][0]])):
-            per_turn_batch = [self.data_in[sample[0]][turn_idx] for sample in batch]
-            batch_turn.append(per_turn_batch)
-        return batch_turn
-
     def fill_belief_state(self, batch_turn, predict_last_belief_state, device, training):
         input_id, segment_id, position_idx = [ ], [ ], [ ]
         target_operation, target_generation = [ ], [ ]
@@ -274,25 +267,57 @@ class Dataset_class(object):
         return [input_id.to(device), segment_id.to(device), input_mask.to(device), position_idx.to(device),
                 target_operation.to(device), target_generation.to(device)], max_update, max_value
 
+    def _transpose_batch(self, batch):
+        """
+
+        Args:
+            batch (List[Tuple[int, int]]): a list of tuples with dial idx and its length
+
+        Returns:
+            _type_: _description_
+        """
+        batch_turn = []        
+        num_turns = len(self.data_in[batch[0][0]])
+        for per_batch in batch: 
+            assert num_turns == per_batch[1]
+            
+        # iterate through number of turns 
+        for turn_idx in range(num_turns):
+            # sample[0]: dial idx 
+            # basically retrieving each utterance 
+            per_turn_batch = [self.data_in[sample[0]][turn_idx] for sample in batch]
+            batch_turn.append(per_turn_batch)
+        return batch_turn
+
     def mini_batch_iterator(self):
+        
+        # create tuples with samples by each of their index and number of turns
         all_samples = [[dial_idx, len(dial)] for dial_idx, dial in enumerate(self.data_in)]
         if self.shuffle:
             random.shuffle(all_samples)
 
         all_batches, batch= [], {}
         for dial in all_samples:
+            # create dictionary keys by number of turns 
             if dial[1] not in batch.keys():
                 batch[dial[1]] = []
+            # add entire dialogue to such that batch[len(dial)] = [dialogues with len(dial)]
             batch[dial[1]].append(dial)
+            
+            # iterate through dictionary and if any of them have reached the desired batch size, 
+            # add them to batches and empty out the dictionary 
             for bk, bv in batch.items():
                 if len(bv) == self.batch_size:
                     all_batches.append(bv)
                     batch[bk] = []
+                    
+        # handle any remaining batches that haven't reached the desired batch size after completing iteration
         for bk, bv in batch.items():
             if len(bv) != 0:
                 all_batches.append(bv)
 
         for batch in tqdm(all_batches, total = len(all_batches)):
+            # form batches 
             yield self._transpose_batch(batch)
 
 
