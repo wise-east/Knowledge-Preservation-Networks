@@ -11,7 +11,4 @@ source $HOME/.bashrc
 cd $HOME/cldst/Knowledge-Preservation-Networks
 conda activate $CONDA_ENV
 
-mkdir -p save/MultiWOZ_2.1/
-LOG_FN="save/MultiWOZ_2.1/log.txt"
-
-python train_test.py |& tee $LOG_FN
+python train_test.py

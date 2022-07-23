@@ -1,5 +1,7 @@
 import os
 import argparse
+
+from regex import E
 from parameters import global_parm as par
 from utils.basic_model import masked_cross_entropy_for_value, MultinomialKLDivergenceLoss
 from transformers import BertTokenizer, BertConfig, AdamW
@@ -15,8 +17,12 @@ import random
 import numpy as np
 from copy import deepcopy
 import time
+import json 
+from pathlib import Path 
 from loguru import logger 
 
+
+KEY_RESULTS = {} 
 
 class DST_model(object):
     def __init__(self, n_gpu, pad_idx):
@@ -284,8 +290,14 @@ def main():
     previous_domains, data_memory, last_model = [], {}, None
     for per_domain_idx, per_domain in enumerate(DOMAINS):
         previous_domains += per_domain.split('-')
-
+        
+        if par.multitask_all: 
+            previous_domains= [] 
+            for dom in DOMAINS: 
+                previous_domains += dom.split('-')
         current_schema = get_schema(par, set(previous_domains))
+
+            
         data_memory_samples = []
         for samples in data_memory.items():
             data_memory_samples += samples[1]
@@ -293,6 +305,9 @@ def main():
         # load data for new domain 
         if par.multitask: 
             train_data_list = increment_dataset(par= par, domains=DOMAINS[:per_domain_idx+1], data_type='train')
+        elif par.multitask_all: 
+            # train with all 
+            train_data_list = increment_dataset(par= par, domains=DOMAINS, data_type='train')
         else: 
             train_data_list = read_json(os.path.join(par.data_path, per_domain+'[train.json')) + data_memory_samples
         train_data_raw = prepare_dataset(par= par,
@@ -305,6 +320,8 @@ def main():
         # expand dev set to include new domain
         if par.increment_dev_set or par.multitask: 
             dev_data_list = increment_dataset(par= par, domains=DOMAINS[:per_domain_idx+1], data_type='dev')
+        elif par.multitask_all: 
+            dev_data_list = increment_dataset(par= par, domains=DOMAINS, data_type='dev')
         else: 
             dev_data_list = increment_dataset(par= par, domains=[per_domain], data_type='dev')
         dev_data_raw = prepare_dataset(par= par,
@@ -315,7 +332,11 @@ def main():
         dev_data_loader = data_tokenizer_loader(par, dev_data_raw, tokenizer, current_schema, False, False)
 
         # expand test set to include new domain 
-        test_data_list = increment_dataset(par= par, domains=DOMAINS[:per_domain_idx+1], data_type='test')
+        if par.multitask_all: 
+            test_data_list = increment_dataset(par= par, domains=DOMAINS, data_type='test')
+        else: 
+            test_data_list = increment_dataset(par= par, domains=DOMAINS[:per_domain_idx+1], data_type='test')
+        
         test_data_raw = prepare_dataset(par= par,
                                         data=test_data_list,
                                         domain=per_domain,
@@ -332,27 +353,43 @@ def main():
         scores = current_DST_model.validate(test_data_loader, current_schema, tokenizer)
         _ = current_DST_model.get_print_score(scores, 'test '+per_domain)
 
+        KEY_RESULTS[f"{per_domain}_scores"] = scores 
+
         if par.knowledge_type in ['KPN']:
             last_model = deepcopy(current_DST_model.bert_dst_model)
         else:
             last_model = None
 
+        if par.multitask_all: 
+            break 
 
-        # update memory with prototypical samples 
-        logger.info(f'Update Memory: {per_domain}')
-        update_data_raw = read_json(os.path.join(par.data_path, per_domain + '[train.json'))
-        update_data_prepare = prepare_dataset(par=par,
-                                          data=update_data_raw,
-                                          domain=per_domain,
-                                          schema=current_schema,
-                                          tokenizer=tokenizer)
-        update_data_loader = data_tokenizer_loader(par, update_data_prepare, tokenizer, current_schema, False, False)
-        data_memory = current_DST_model.update_data_memory(data_memory, update_data_raw, update_data_loader,
-                                                           per_domain, per_domain_idx, current_schema, tokenizer)
+        if par.mode == 'train': 
+            # update memory with prototypical samples 
+            logger.info(f'Update Memory: {per_domain}')
+            update_data_raw = read_json(os.path.join(par.data_path, per_domain + '[train.json'))
+            update_data_prepare = prepare_dataset(par=par,
+                                            data=update_data_raw,
+                                            domain=per_domain,
+                                            schema=current_schema,
+                                            tokenizer=tokenizer)
+            update_data_loader = data_tokenizer_loader(par, update_data_prepare, tokenizer, current_schema, False, False)
+            data_memory = current_DST_model.update_data_memory(data_memory, update_data_raw, update_data_loader,
+                                                            per_domain, per_domain_idx, current_schema, tokenizer)
     return 0
 
 if __name__ == '__main__':
-    # os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-mode', default='train') # train test
+    parser.add_argument('-thread_num', default='0') # 0
+    parser.add_argument('-dataset', default='MultiWOZ21') # MultiWOZ21
+    args = parser.parse_args()
+    par.init_handler(args.dataset)
+    par.thread_num = args.thread_num
+    par.mode = args.mode
+    
+
+    logger.add(par.model_save + f"log_{par.mode}.txt")
 
     start_local = time.localtime()
     start_time = time.time() 
@@ -369,15 +406,6 @@ if __name__ == '__main__':
     n_gpu = torch.cuda.device_count()
     logger.info(f"num gpus: {n_gpu}")
     logger.info(f"torch.cuda.is_available(): {torch.cuda.is_available()}")
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-mode', default='train') # train test
-    parser.add_argument('-thread_num', default='0') # 0
-    parser.add_argument('-dataset', default='MultiWOZ21') # MultiWOZ21
-    args = parser.parse_args()
-    par.init_handler(args.dataset)
-    par.thread_num = args.thread_num
-    par.mode = args.mode
     logger.info(f'this is the thread number {par.thread_num}')
     
     os.makedirs(par.model_save, exist_ok=True)
@@ -385,4 +413,12 @@ if __name__ == '__main__':
     end_time = time.time() 
     end_local = time.localtime()
     logger.info(f"End time: {time.strftime('%Y-%m-%d %H:%M:%S', end_local)}")
-    logger.info(f"Elapsed time: {time.strftime('%H:%M:%S', time.gmtime(end_time - start_time))}")
+    elapsed_time = time.strftime('%H:%M:%S', time.gmtime(end_time - start_time)) 
+    logger.info(f"Elapsed time: {elapsed_time}")
+
+    KEY_RESULTS["elapsed_time"] = elapsed_time 
+    key_results_path = Path(par.model_save) / "key_results.json"
+    with key_results_path.open("w") as f: 
+        json.dump(KEY_RESULTS, f, indent=4, sort_keys=True)
+    
+    

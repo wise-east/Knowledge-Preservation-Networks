@@ -33,16 +33,22 @@ class _Config:
         self.decoder_type = 'gru'
         self.max_r_len = 12
         self.max_seq_length = 256
-        self.memory_num = 0  # 0 50 
+        self.memory_num = 50  # 0 50 
         self.alpha_0 = 0.1
         self.alpha_1 = 0.2
         self.temperature = 2
-        self.reverse_type = 'none'  # 'none'  'full'  'KPN'
-        self.knowledge_type = 'none'  # 'none'  'KPN'
+        self.reverse_type = 'KPN'  # 'none'  'full'  'KPN'
+        self.knowledge_type = 'KPN'  # 'none'  'KPN'
         self.increment_dev_set = False # False True 
-        self.multitask = True # False True 
+        self.multitask = False # False True 
+        self.multitask_all = True 
 
         self.model_save = f'save/MultiWOZ_2.1/ep{self.per_epoch_all}_increment_dev:{self.increment_dev_set}_kt:{self.knowledge_type}_mem:{self.memory_num}_multitask:{self.multitask}/'
+        if self.multitask_all: 
+            self.memory_num = 0 
+            self.reverse_type = "none" 
+            self.knowledge_type = "none" 
+            self.model_save = f'save/MultiWOZ_2.1/ep{self.per_epoch_all}_multitask_all'
 
         self.rkd_filter_none = False  # True [False is better]
 
