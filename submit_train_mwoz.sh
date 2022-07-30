@@ -9,6 +9,9 @@ CONDA_ENV="kpn"
 source $HOME/miniconda/etc/profile.d/conda.sh
 source $HOME/.bashrc 
 cd $HOME/cldst/Knowledge-Preservation-Networks
+conda deactivate
+conda deactivate
 conda activate $CONDA_ENV
+which pip
 
 python train_test.py

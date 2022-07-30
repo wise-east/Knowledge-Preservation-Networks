@@ -93,7 +93,7 @@ def label_num(belief_state: List[List[str]], last_belief_state:List[List[str]], 
                 y_operation[idx] = 'dontcare'
             else:
                 y_operation[idx] = 'update'
-                y_generate.append([ tokenizer.tokenize(sv[1]) + ['[unused2]'], idx])
+                y_generate.append([ tokenizer.tokenize(sv[1]) + ['[unused2]'], idx]) # end of sequence token for GRU 
 
     temp_belief_state = dict(belief_state)
     for sv in last_belief_state:
@@ -187,6 +187,17 @@ class Dataset_class(object):
             self.batch_size = par.test_batch_size
 
     def fill_belief_state(self, batch_turn, predict_last_belief_state, device, training):
+        """Key function that formats the input to the model and the target labels
+
+        Args:
+            batch_turn (_type_): dictionary with current batch information 
+            predict_last_belief_state (_type_): predicted belief state from last turn 
+            device (_type_): device (cuda or cpu)
+            training (_type_): if formatting for training (to use previous golden belief state or use the predicted one)
+
+        Returns:
+            _type_: inputs in the format as stated in the SOM-DST paper 
+        """
         input_id, segment_id, position_idx = [ ], [ ], [ ]
         target_operation, target_generation = [ ], [ ]
 
@@ -202,7 +213,7 @@ class Dataset_class(object):
                     current_belief_state = dict(predict_last_belief_state[sample_idx])
                 belief_state_token = [ ]
                 for s in self.schema:
-                    belief_state_token.append('[unused0]')
+                    belief_state_token.append('[unused0]') # [SLOT] special token 
                     temp_s = s.split('-')
                     v = current_belief_state.get(s)
                     if v is not None:
@@ -210,10 +221,11 @@ class Dataset_class(object):
                         temp_s = self.tokenizer.tokenize(' '.join(temp_s))
                     else:
                         temp_s = self.tokenizer.tokenize(' '.join(temp_s))
-                        temp_s.extend([ '-', '[unused1]' ])
+                        temp_s.extend([ '-', '[unused1]' ]) # [NULL] special token 
                     belief_state_token.extend(temp_s)
                 belief_state_token_idx = self.tokenizer.convert_tokens_to_ids(belief_state_token)
 
+                # keep track of [slot] special token positions
                 slot_position = [ ]
                 for token_idx, token in enumerate(belief_state_token):
                     if token == '[unused0]':
@@ -264,8 +276,14 @@ class Dataset_class(object):
         segment_id, _ = utt2tensor(segment_id, 0, is_float=False)
         input_mask = get_mask_metric(input_length)
 
-        return [input_id.to(device), segment_id.to(device), input_mask.to(device), position_idx.to(device),
-                target_operation.to(device), target_generation.to(device)], max_update, max_value
+        return [
+            input_id.to(device), 
+            segment_id.to(device), 
+            input_mask.to(device), 
+            position_idx.to(device),
+            target_operation.to(device), 
+            target_generation.to(device)
+        ], max_update, max_value
 
     def _transpose_batch(self, batch):
         """

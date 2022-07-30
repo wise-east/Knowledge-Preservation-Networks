@@ -19,7 +19,9 @@ from copy import deepcopy
 import time
 import json 
 from pathlib import Path 
-from loguru import logger 
+from loguru import logger
+from torch.utils.tensorboard import SummaryWriter
+ 
 
 
 KEY_RESULTS = {} 
@@ -66,6 +68,7 @@ class DST_model(object):
         self.bert_dst_model.train()
 
         best_joint_goal_accuracy = 0
+        update_step = 0 
         for per_epoch in range(par.per_epoch_list[per_domain_idx]):
             data_iterator, dialog_batch_num, train_loss,train_loss_all = dataloader.mini_batch_iterator(), 0, 0, [0, 0]
             for batch_dialog in data_iterator:
@@ -83,7 +86,8 @@ class DST_model(object):
                                                                                  is_update_ewc=False)
                     predicts = [predicts_g, predicts_y]
 
-                    loss, loss_all = self.calculate_loss(predicts, batch_turn_data, tokenizer, max_update)
+                    loss, loss_all = self.calculate_loss(predicts, batch_turn_data, tokenizer, max_update)                    
+                    
                     train_loss += loss.item()
                     train_loss_all[0] += loss_all[0].item()
                     if loss_all[1] != 0:
@@ -131,25 +135,36 @@ class DST_model(object):
                     self.enc_optimizer.step()
                     self.dec_optimizer.step()
                     self.bert_dst_model.zero_grad()
+                    update_step += 1 
 
                 if dialog_batch_num % 40 == 0:
                     logger.info(f'current batch number: {dialog_batch_num}\t train loss: {train_loss:.4f} {[round(tl, 4) for tl in train_loss_all]}')
-                    train_loss, train_loss_all = 0, [0, 0]
+                    writer.add_scalar('Loss/train', loss, update_step)
+                    writer.add_scalar('Loss_gate/train', loss_all[0], update_step)
+                    writer.add_scalar('Loss_generation/train', loss_all[1], update_step)
 
+                    train_loss, train_loss_all = 0, [0, 0]
+                    
             if per_epoch % 1 == 0:
-                scores = self.validate(dev_dataloader, schema, tokenizer)
+                scores, val_loss, val_loss_all = self.validate(dev_dataloader, schema, tokenizer)
+                writer.add_scalar('Loss/val', val_loss, update_step)
+                writer.add_scalar('Loss_train/val', val_loss_all[0], update_step)
+                writer.add_scalar('Loss_generation/val', val_loss_all[1], update_step)
+                
                 joint_goal_accuracy = self.get_print_score(scores, per_epoch)
                 if joint_goal_accuracy > best_joint_goal_accuracy:
                     logger.info(f"New best validation set joint goal accuracy: {joint_goal_accuracy} >> {best_joint_goal_accuracy}")
                     logger.info('saved models')
                     best_joint_goal_accuracy = joint_goal_accuracy
-                    self.save_model(per_epoch, par.model_save+current_domain)
+                    self.save_model(per_epoch, par.result_path+current_domain)
                 else: 
                     logger.info(f"Didn't beat best validation set joint goal accuracy: {joint_goal_accuracy} << {best_joint_goal_accuracy}")
 
     def validate(self, dataloader, schema, tokenizer):
         self.bert_dst_model.eval()
         data_iterator, scores = dataloader.mini_batch_iterator(), []
+        
+        loss_list, loss_gate, loss_gen = [], [], []  
         for batch_dialog in data_iterator:
             predict_belief_state = None
             for batch_turn in batch_dialog:
@@ -160,6 +175,11 @@ class DST_model(object):
                                                                 is_update_ewc=False)
                 predicts = [ predicts_g, predicts_y ]
 
+                # loss, loss_all = self.calculate_loss(predicts, batch_turn_data, tokenizer, max_update)
+                # loss_list.append(loss) 
+                # loss_gate.append(loss_all[0])
+                # loss_gen.append(loss_all[1])
+
                 predicts_list = predicts_to_list(predicts)
                 predict_belief_state = decode_belief_state(par, predicts_list, tokenizer, schema, predict_belief_state)
                 batch_scores = self.dst_evaluate.compare_acc(predict_belief_state, batch_turn)
@@ -169,7 +189,7 @@ class DST_model(object):
                     for per_score_idx, per_score in enumerate(batch_scores):
                         scores[per_score_idx] += per_score
         self.bert_dst_model.train()
-        return scores
+        return scores, np.mean(loss_list), np.mean(loss_gate), np.mean(loss_gen) 
 
     def update_data_memory(self, data_memory, update_data_raw, update_data_loader, domain, domain_idx, schema, tokenizer):
         if par.reverse_type == 'full':
@@ -295,6 +315,7 @@ def main():
             previous_domains= [] 
             for dom in DOMAINS: 
                 previous_domains += dom.split('-')
+                
         current_schema = get_schema(par, set(previous_domains))
 
             
@@ -349,9 +370,13 @@ def main():
             current_DST_model.train(train_data_loader, current_schema, tokenizer, dev_data_loader, per_domain, per_domain_idx, last_model, data_memory)
 
         logger.info(f'Test: {per_domain}')
-        current_DST_model.load_model(par.model_save+per_domain+par.thread_num+'.pkl')
-        scores = current_DST_model.validate(test_data_loader, current_schema, tokenizer)
+        current_DST_model.load_model(par.result_path+per_domain+par.thread_num+'.pkl')
+        scores, test_loss, test_loss_gate, test_loss_gen = current_DST_model.validate(test_data_loader, current_schema, tokenizer)
         _ = current_DST_model.get_print_score(scores, 'test '+per_domain)
+        writer.add_scalar("Loss/test", test_loss, per_domain_idx)
+        writer.add_scalar("Loss_gate/test", test_loss_gate, per_domain_idx)
+        writer.add_scalar("Loss_gen/test", test_loss_gen, per_domain_idx)
+        logger.info(f"{per_domain} - Test loss: {test_loss:.4f} | Test all loss: gate - {test_loss_gate:.4f} gen - {test_loss_gen:.4f}")
 
         KEY_RESULTS[f"{per_domain}_scores"] = scores 
 
@@ -379,6 +404,8 @@ def main():
 
 if __name__ == '__main__':
 
+    writer = SummaryWriter()
+
     parser = argparse.ArgumentParser()
     parser.add_argument('-mode', default='train') # train test
     parser.add_argument('-thread_num', default='0') # 0
@@ -388,8 +415,8 @@ if __name__ == '__main__':
     par.thread_num = args.thread_num
     par.mode = args.mode
     
-
-    logger.add(par.model_save + f"log_{par.mode}.txt")
+    par.save() 
+    logger.add(os.path.join(par.result_path + f"log_{par.mode}.txt"))
 
     start_local = time.localtime()
     start_time = time.time() 
@@ -408,7 +435,7 @@ if __name__ == '__main__':
     logger.info(f"torch.cuda.is_available(): {torch.cuda.is_available()}")
     logger.info(f'this is the thread number {par.thread_num}')
     
-    os.makedirs(par.model_save, exist_ok=True)
+    os.makedirs(par.result_path, exist_ok=True)
     main()
     end_time = time.time() 
     end_local = time.localtime()
@@ -417,7 +444,7 @@ if __name__ == '__main__':
     logger.info(f"Elapsed time: {elapsed_time}")
 
     KEY_RESULTS["elapsed_time"] = elapsed_time 
-    key_results_path = Path(par.model_save) / "key_results.json"
+    key_results_path = Path(par.result_path) / "key_results.json"
     with key_results_path.open("w") as f: 
         json.dump(KEY_RESULTS, f, indent=4, sort_keys=True)
     

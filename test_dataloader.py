@@ -41,6 +41,7 @@ def test_dataloader():
         for idx, batches in enumerate(iterator):
             for batch in batches: 
                 counter_list.append(len(batch))
+                import pdb ; pdb.set_trace() 
                 
             # if idx == 50: 
             #     break 
