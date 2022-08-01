@@ -1,6 +1,8 @@
 import argparse
 from utils.basic_func import read_json, write_json
 import os 
+import re 
+
 EXPERIMENT_DOMAINS = ["hotel", "train", "restaurant", "attraction", "taxi"]
 slot_convert = {'pricerange':'price range', 'leaveat':'leave at', 'arriveby':'arrive by'}
 def formalize_schema():
@@ -13,6 +15,17 @@ def formalize_schema():
         slot_all.append(ds)
     return sorted(slot_all)
 
+def normalize_dialogue_id(dial_id: str)->str:
+    """return dialogue id without .json and all lower case 
+
+    Args:
+        dial_id (str): original dialogue id
+
+    Returns:
+        str: normalized dialogue id 
+    """
+    normalized_dialogue_id = re.sub(".json", "", dial_id).lower()
+    return normalized_dialogue_id 
 
 def main():
     slot_all = formalize_schema()
@@ -29,7 +42,8 @@ def main():
             if get_domain == '':
                 continue
             domains = get_domain
-            per_dialog_normal = {'domains':domains, 'turns':turns}
+            normalized_dialogue_id = normalize_dialogue_id(per_dialog['dialogue_idx'])
+            per_dialog_normal = {'domains':domains, 'turns':turns, 'dialogue_id': normalized_dialogue_id}
             if domains in temp_data.keys():
                 temp_data[domains].append(per_dialog_normal)
             else:
@@ -48,6 +62,7 @@ def main():
 
 def process_dialog(dialog, slot_all):
     temp_turns, get_domain = [], []
+    normalized_dialogue_id = normalize_dialogue_id(dialog['dialogue_idx'])
     for per_turn_idx, per_turn in enumerate(dialog['dialogue']):
         user_utterance = per_turn['transcript']
         system_utterance = per_turn['system_transcript']
@@ -72,6 +87,7 @@ def process_dialog(dialog, slot_all):
         temp_turns.append({'user_utterance':user_utterance,
                            'system_utterance': system_utterance,
                            'belief_state': temp_belief_state,
+                           'turn_id': f"{normalized_dialogue_id}-{per_turn_idx}"
                            })
     return temp_turns, '-'.join(sorted(list(set(get_domain))))
 
