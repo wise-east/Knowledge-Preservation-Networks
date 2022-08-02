@@ -1,7 +1,5 @@
 import os
 import argparse
-
-from regex import E
 from parameters import global_parm as par
 from utils.basic_model import masked_cross_entropy_for_value, MultinomialKLDivergenceLoss
 from transformers import BertTokenizer, BertConfig, AdamW
@@ -146,10 +144,10 @@ class DST_model(object):
                     train_loss, train_loss_all = 0, [0, 0]
                     
             if per_epoch % 1 == 0:
-                scores, val_loss, val_loss_all = self.validate(dev_dataloader, schema, tokenizer)
+                scores, val_loss, val_loss_gate, val_loss_gen = self.validate(dev_dataloader, schema, tokenizer)
                 writer.add_scalar('Loss/val', val_loss, update_step)
-                writer.add_scalar('Loss_train/val', val_loss_all[0], update_step)
-                writer.add_scalar('Loss_generation/val', val_loss_all[1], update_step)
+                writer.add_scalar('Loss_gate/val', val_loss_gate, update_step)
+                writer.add_scalar('Loss_generation/val', val_loss_gen, update_step)
                 
                 joint_goal_accuracy = self.get_print_score(scores, per_epoch)
                 if joint_goal_accuracy > best_joint_goal_accuracy:
@@ -189,7 +187,7 @@ class DST_model(object):
                     for per_score_idx, per_score in enumerate(batch_scores):
                         scores[per_score_idx] += per_score
         self.bert_dst_model.train()
-        return scores, np.mean(loss_list), np.mean(loss_gate), np.mean(loss_gen) 
+        return scores, np.mean(loss_list), np.mean(loss_gate), np.mean(loss_gen)
 
     def update_data_memory(self, data_memory, update_data_raw, update_data_loader, domain, domain_idx, schema, tokenizer):
         if par.reverse_type == 'full':
@@ -324,7 +322,7 @@ def main():
             data_memory_samples += samples[1]
 
         # load data for new domain 
-        if par.multitask: 
+        if par.get_upperbound: 
             train_data_list = increment_dataset(par= par, domains=DOMAINS[:per_domain_idx+1], data_type='train')
         elif par.multitask_all: 
             # train with all 
@@ -339,7 +337,7 @@ def main():
         train_data_loader = data_tokenizer_loader(par, train_data_raw, tokenizer, current_schema, par.shuffle, True)
 
         # expand dev set to include new domain
-        if par.increment_dev_set or par.multitask: 
+        if par.increment_dev_set or par.get_upperbound: 
             dev_data_list = increment_dataset(par= par, domains=DOMAINS[:per_domain_idx+1], data_type='dev')
         elif par.multitask_all: 
             dev_data_list = increment_dataset(par= par, domains=DOMAINS, data_type='dev')
@@ -418,6 +416,8 @@ if __name__ == '__main__':
     par.save() 
     logger.add(os.path.join(par.result_path + f"log_{par.mode}.txt"))
 
+    logger.info(f"Config: {par}")
+    
     start_local = time.localtime()
     start_time = time.time() 
     logger.info(f"Start time: {time.strftime('%Y-%m-%d %H:%M:%S', start_local)}")

@@ -23,7 +23,7 @@ class _Config:
         self.bert_config_path = 'bert-base-uncased'
 
         self.dialog_turn_num = 1
-        self.per_epoch_all = 10
+        self.per_epoch_all = 30
         self.per_epoch_list = [30, 30, 10, 30, 30, 30, 30, 30, 30, 30]
         self.shuffle = True
         self.dropout = 0.1
@@ -38,19 +38,19 @@ class _Config:
         self.decoder_type = 'gru'
         self.max_r_len = 12
         self.max_seq_length = 256
-        self.memory_num = 0  # 0 50 
+        self.memory_num = 50  # 0 50 
         self.alpha_0 = 0.1
         self.alpha_1 = 0.2
         self.temperature = 2
-        self.reverse_type = 'none'  # 'none'  'full'  'KPN'
-        self.knowledge_type = 'none'  # 'none'  'KPN'
+        self.reverse_type = 'KPN'  # 'none'  'full'  'KPN'
+        self.knowledge_type = 'KPN'  # 'none'  'KPN'
         self.increment_dev_set = False # False True 
-        self.multitask = True # False True 
+        self.get_upperbound = False # False True 
         self.multitask_all = False 
 
         curr_time =  time.strftime('%Y-%m-%d_%H:%M:%S', time.localtime())
 
-        self.result_path = f'save/MultiWOZ_2.1/{curr_time}_ep{self.per_epoch_all}_increment_dev:{self.increment_dev_set}_kt:{self.knowledge_type}_mem:{self.memory_num}_multitask:{self.multitask}/'
+        self.result_path = f'save/MultiWOZ_2.1/{curr_time}_ep{self.per_epoch_all}_increment_dev:{self.increment_dev_set}_kt:{self.knowledge_type}_mem:{self.memory_num}_get_upperbound:{self.get_upperbound}/'
         if self.multitask_all: 
             self.memory_num = 0 
             self.reverse_type = "none" 
@@ -68,7 +68,7 @@ class _Config:
         self.bert_config_path = '/data/liuqbdata/transformers/bert/bert-base-uncased/config.json'
 
         self.dialog_turn_num = 1
-        self.per_epoch_all = 30
+        self.per_epoch_all = 10
         self.per_epoch_list = [30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30]
         self.shuffle = True
         self.dropout = 0.1
@@ -91,6 +91,8 @@ class _Config:
         self.knowledge_type = 'KPN'  # 'none'  'KPN'
 
         self.rkd_filter_none = True  # True False [True is better]
+    def __str__(self):
+        return json.dumps(vars(self), indent=4, sort_keys=True)
 
     def save(self, save_path=None): 
         Path(self.result_path).mkdir(parents=True, exist_ok=True)
