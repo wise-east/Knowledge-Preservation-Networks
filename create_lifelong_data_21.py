@@ -5,6 +5,7 @@ import re
 
 EXPERIMENT_DOMAINS = ["hotel", "train", "restaurant", "attraction", "taxi"]
 slot_convert = {'pricerange':'price range', 'leaveat':'leave at', 'arriveby':'arrive by'}
+
 def formalize_schema():
     schema = read_json(args.input_dir+'ontology.json')
     slot_all = []
@@ -27,45 +28,14 @@ def normalize_dialogue_id(dial_id: str)->str:
     normalized_dialogue_id = re.sub(".json", "", dial_id).lower()
     return normalized_dialogue_id 
 
-def main():
-    slot_all = formalize_schema()
-    train_data, dev_data, test_data = {}, {},{}
-    data_all = {'train':train_data, 'dev':dev_data, 'test':test_data}
-
-
-    for data_style in ['train','dev','test']:
-        temp_data = data_all[data_style]
-
-        per_data = read_json(args.input_dir+'split/'+data_style+'_dials.json')
-        for per_dialog in per_data:
-            turns, get_domain = process_dialog(per_dialog, slot_all)
-            if get_domain == '':
-                continue
-            domains = get_domain
-            normalized_dialogue_id = normalize_dialogue_id(per_dialog['dialogue_idx'])
-            per_dialog_normal = {'domains':domains, 'turns':turns, 'dialogue_id': normalized_dialogue_id}
-            if domains in temp_data.keys():
-                temp_data[domains].append(per_dialog_normal)
-            else:
-                temp_data[domains] = [per_dialog_normal]
-
-    train_data = dict(sorted(list(train_data.items()), key=lambda x:len(x[1]), reverse=True))
-
-    os.makedirs(args.output_dir+'/', exist_ok=True)
-
-    for lifelong_domain in [ 'restaurant', 'hotel', 'hotel-restaurant', 'train', 'restaurant-train', 'hotel-train',
-                             'attraction-restaurant', 'attraction', 'attraction-hotel', 'attraction-train' ]:
-        write_json(train_data[lifelong_domain], args.output_dir+'/'+lifelong_domain+'[train.json')
-        write_json(dev_data[lifelong_domain], args.output_dir+'/'+lifelong_domain+'[dev.json')
-        write_json(test_data[lifelong_domain], args.output_dir+'/'+lifelong_domain+'[test.json')
-    return 1
-
 def process_dialog(dialog, slot_all):
     temp_turns, get_domain = [], []
     normalized_dialogue_id = normalize_dialogue_id(dialog['dialogue_idx'])
     for per_turn_idx, per_turn in enumerate(dialog['dialogue']):
         user_utterance = per_turn['transcript']
+        user_utterance_delex = per_turn['transcript_delex']
         system_utterance = per_turn['system_transcript']
+        system_utterance_delex = per_turn['system_transcript_delex']
 
         belief_state = []
         for sv in per_turn[ 'belief_state' ]:
@@ -85,7 +55,9 @@ def process_dialog(dialog, slot_all):
         temp_belief_state = sorted(list_belief_state, key=lambda x:x[0])
 
         temp_turns.append({'user_utterance':user_utterance,
+                           'user_utterance_delex': user_utterance_delex, 
                            'system_utterance': system_utterance,
+                           'system_utterance_delex': system_utterance_delex, 
                            'belief_state': temp_belief_state,
                            'turn_id': f"{normalized_dialogue_id}-{per_turn_idx}"
                            })
@@ -186,9 +158,47 @@ def fix_general_label_error(labels, type, slots):
 
     return label_dict
 
+def main():
+    slot_all = formalize_schema()
+    train_data, dev_data, test_data = {}, {},{}
+    data_all = {'train':train_data, 'dev':dev_data, 'test':test_data}
+
+
+    for data_style in ['train','dev','test']:
+        temp_data = data_all[data_style]
+
+        per_data = read_json(args.input_dir + data_style +'_dials.json')
+        for per_dialog in per_data:
+            turns, get_domain = process_dialog(per_dialog, slot_all)
+            if get_domain == '':
+                continue
+            domains = get_domain
+            normalized_dialogue_id = normalize_dialogue_id(per_dialog['dialogue_idx'])
+            per_dialog_normal = {'domains':domains, 'turns':turns, 'dialogue_id': normalized_dialogue_id}
+            if domains in temp_data.keys():
+                temp_data[domains].append(per_dialog_normal)
+            else:
+                temp_data[domains] = [per_dialog_normal]
+
+    train_data = dict(sorted(list(train_data.items()), key=lambda x:len(x[1]), reverse=True))
+
+    os.makedirs(args.output_dir+'/', exist_ok=True)
+    for data, split in zip([train_data, dev_data, test_data], ['train', 'dev', 'test']): 
+        print(f"{split} counts:")
+        for dom in data: 
+            print(f"\t{dom:<40} # dialogues: {len(data[dom]):<3}")
+    # import pdb; pdb.set_trace() 
+
+    for lifelong_domain in [ 'restaurant', 'hotel', 'hotel-restaurant', 'train', 'restaurant-train', 'hotel-train',
+                             'attraction-restaurant', 'attraction', 'attraction-hotel', 'attraction-train' ]:
+        write_json(train_data[lifelong_domain], args.output_dir+'/'+lifelong_domain+'[train.json')
+        write_json(dev_data[lifelong_domain], args.output_dir+'/'+lifelong_domain+'[dev.json')
+        write_json(test_data[lifelong_domain], args.output_dir+'/'+lifelong_domain+'[test.json')
+    return 1
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input_dir", type=str, default='data/MultiWOZ_2.1/')
+    parser.add_argument("--input_dir", type=str, default='data/MultiWOZ_2.1/split/')
     parser.add_argument("--data_set", type=str, default='2.1')
     parser.add_argument("--output_dir", type=str, default='data/MultiWOZ_2.1/lifelong')
     args = parser.parse_args()

@@ -10,3 +10,7 @@ Steps:
 1. `create_data.py`: downloads MultiWOZ and splits it by train/valid/test
 1. `create_lifelong_data21.py`: split data by domain for continual learning set up 
 1. `train_test.py`: run training for Knowledge Preservation Network (KPN)
+
+
+# Notes 
+1. ignore the MultiWOZ `.rar` file. just running `create_data.py` will download data and extract it. 

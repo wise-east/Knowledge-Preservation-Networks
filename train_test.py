@@ -316,7 +316,6 @@ def main():
                 
         current_schema = get_schema(par, set(previous_domains))
 
-            
         data_memory_samples = []
         for samples in data_memory.items():
             data_memory_samples += samples[1]

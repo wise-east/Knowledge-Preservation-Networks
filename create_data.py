@@ -11,6 +11,7 @@ import difflib
 import numpy as np
 import argparse
 from shutil import copyfile
+from tqdm import tqdm 
 
 np.set_printoptions(precision=3)
 
@@ -296,12 +297,14 @@ def get_dial(dialogue):
     if d_orig is None:
         return None
     usr = [t['text'] for t in d_orig['usr_log']]
+    usr_delex = [t['delex_text'] for t in d_orig['usr_log']]
     sys = [t['text'] for t in d_orig['sys_log']]
+    sys_delex = [t['delex_text'] for t in d_orig['sys_log']]
     sys_a = [t['dialogue_acts'] for t in d_orig['sys_log']]
     bvs = [t['belief_value_summary'] for t in d_orig['sys_log']]
     domain = [t['domain'] for t in d_orig['usr_log']]
-    for item in zip(usr, sys, sys_a, domain, bvs):
-        dial.append({'usr':item[0],'sys':item[1], 'sys_a':item[2], 'domain':item[3], 'bvs':item[4]})
+    for item in zip(usr, usr_delex, sys, sys_delex, sys_a, domain, bvs):
+        dial.append({'usr':item[0], 'usr_delex': item[1], 'sys':item[2], 'sys_delex': item[3], 'sys_a':item[4], 'domain':item[5], 'bvs':item[6]})
     return dial
 
 
@@ -362,18 +365,21 @@ def createData(args):
     
     # create dictionary of delexicalied values that then we will search against, order matters here!
     # dic = delexicalize.prepareSlotValuesIndependent()
-    delex_data = {}
+    final_data = {}
 
     fin1 = open(os.path.join(args.main_dir, 'data.json'), 'r')
+    delex_fin1 = open(os.path.join(args.main_dir, 'delex.json'), 'r') # process delexicalized file 
     data = json.load(fin1)
+    delex_data = json.load(delex_fin1)
 
     fin2 = open(os.path.join(args.main_dir, 'dialogue_acts.json'), 'r')
     data2 = json.load(fin2)
 
-    for didx, dialogue_name in enumerate(data):
+    for didx, dialogue_name in tqdm(enumerate(data)):
 
         dialogue = data[dialogue_name]
-
+        delex_dialogue = delex_data[dialogue_name]
+        
         domains = []
         for dom_k, dom_v in dialogue['goal'].items():
             if dom_v and dom_k not in IGNORE_KEYS_IN_GOAL: # check whether contains some goal entities
@@ -386,6 +392,7 @@ def createData(args):
             origin_text = normalize(turn['text'], False)
             # origin_text = delexicalize.markEntity(origin_text, dic)
             dialogue['log'][idx]['text'] = origin_text
+            dialogue['log'][idx]['delex_text'] = normalize(delex_dialogue['log'][idx]['text'], False)
 
             if idx % 2 == 1:  # if it's a system turn
 
@@ -399,15 +406,9 @@ def createData(args):
             # FIXING delexicalization:
             dialogue = fixDelex(dialogue_name, dialogue, data2, idx, idx_acts)
         
-        delex_data[dialogue_name] = dialogue
+        final_data[dialogue_name] = dialogue
 
-        # if didx > 10:
-        #     break
-
-    # with open('data/multi-woz/woz2like_data.json', 'w') as outfile:
-    #     json.dump(delex_data, outfile)
-
-    return delex_data
+    return final_data
 
 
 def buildDelexDict(origin_sent, delex_sent):
@@ -474,10 +475,12 @@ def divideData(data,args):
                 # usr, usr_o, sys, sys_o, sys_a, domain
                 turn_dialog = {}
                 turn_dialog['system_transcript'] = dial[turn_i-1]['sys'] if turn_i > 0 else ""
+                turn_dialog['system_transcript_delex'] = dial[turn_i-1]['sys_delex'] if turn_i > 0 else ""
                 turn_dialog['turn_idx'] = turn_i
                 turn_dialog['belief_state'] = [{"slots": [s], "act": "inform"} for s in turn['bvs']]
                 turn_dialog['turn_label'] = [bs["slots"][0] for bs in turn_dialog['belief_state'] if bs not in last_bs] 
                 turn_dialog['transcript'] = turn['usr']
+                turn_dialog['transcript_delex'] = turn['usr_delex']
                 turn_dialog['system_acts'] = dial[turn_i-1]['sys_a'] if turn_i > 0 else []
                 turn_dialog['domain'] = turn['domain']
                 last_bs = turn_dialog['belief_state']
